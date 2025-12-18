@@ -10,7 +10,7 @@ app = Flask(__name__)
 # 2. Create Gemini client
 client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
 
-NEWS_API_KEY = "2483ca61c27a4074ba9436f0fc9686c5"
+NEWS_API_KEY = os.getenv("NEWS_API_KEY")
 NEWS_URL = "https://newsapi.org/v2/top-headlines"
 
 
@@ -33,19 +33,27 @@ def summarize_article(text):
 # 3. Route: /news
 @app.route("/news")
 def get_news():
-    # Get category from URL, example: /news?category=technology
+    search_query = request.args.get("q")
     category = request.args.get("category", "technology")
 
+    # Base params (always needed)
     params = {
-        "category": category,
         "language": "en",
         "apiKey": NEWS_API_KEY
     }
+
+    # Decide mode: search OR category
+    if search_query:
+        params["q"] = search_query
+    else:
+        params["category"] = category
 
     response = requests.get(NEWS_URL, params=params)
     data = response.json()
 
     articles = data.get("articles", [])
+    if not articles:
+        return "No articles found or API error."
 
     output = []
     count = 0
@@ -54,10 +62,6 @@ def get_news():
     for article in articles:
         if count >= MAX_ARTICLES:
             break
-
-        if not articles:
-            return "No articles found or API error."
-
 
         if not article.get("description"):
             continue
@@ -68,15 +72,15 @@ def get_news():
         output.append(
             f"📰 {article['title']}\n"
             f"Source: {article['source']['name']}\n"
-            f"Summary: {summary}\n"
+            f"Summary: {summary}"
         )
 
         count += 1
-        time.sleep(15)  # rate-limit Gemini
 
     return "\n\n".join(output)
 
 
+
 # 4. Run the server
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run()
