@@ -16,8 +16,6 @@ NEWS_URL = "https://newsapi.org/v2/top-headlines"
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_API_URL = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
 
-
-
 def summarize_article(text):
     prompt = (
         "Summarize this news in 2 short sentences. "
@@ -41,20 +39,12 @@ def send_telegram_message(chat_id, text):
     }
     requests.post(url, json=payload)
 
-
-# 3. Route:
-@app.route("/news")
-def get_news():
-    search_query = request.args.get("q")
-    category = request.args.get("category", "technology")
-
-    # Base params (always needed)
+def fetch_news(search_query=None, category="technology"):
     params = {
         "language": "en",
         "apiKey": NEWS_API_KEY
     }
 
-    # Decide mode: search OR category
     if search_query:
         params["q"] = search_query
     else:
@@ -65,11 +55,11 @@ def get_news():
 
     articles = data.get("articles", [])
     if not articles:
-        return "No articles found or API error."
+        return "No articles found."
 
     output = []
     count = 0
-    MAX_ARTICLES = 5
+    MAX_ARTICLES = 3
 
     for article in articles:
         if count >= MAX_ARTICLES:
@@ -91,51 +81,57 @@ def get_news():
 
     return "\n\n".join(output)
 
+
+
+# 3. Route:
+@app.route("/news")
+def get_news():
+    search_query = request.args.get("q")
+    category = request.args.get("category", "technology")
+
+    return fetch_news(search_query, category)
+
+
 @app.route("/telegram", methods=["POST"])
 def telegram_webhook():
-    data = request.get_json()
+    data = request.get_json(silent=True)
 
-    if "message" not in data:
+    if not data or "message" not in data:
         return "ok"
 
     message = data["message"]
-    text = message.get("text", "")
+    text = message.get("text", "").strip()
     chat_id = message["chat"]["id"]
 
-    # Expected format:
-    # /news tech
-    # /news q=gta 6
+    # Only respond to /news
     if not text.startswith("/news"):
-        send_telegram_message(chat_id, "Use: /news <category> or /news q=<search>")
+        send_telegram_message(
+            chat_id,
+            "Use:\n/news <category>\n/news q=<search>\n\nExample:\n/news technology\n/news q=gta 6"
+        )
         return "ok"
 
-    parts = text.split(" ", 1)
-
+    # Defaults
     category = "technology"
     query = None
 
+    parts = text.split(" ", 1)
+
     if len(parts) > 1:
-        arg = parts[1]
+        arg = parts[1].strip()
         if arg.startswith("q="):
-            query = arg.replace("q=", "")
+            query = arg[2:].strip()
         else:
             category = arg
 
-    # Call your own API internally
-    params = {}
-    if query:
-        params["q"] = query
-    else:
-        params["category"] = category
+    try:
+        # DIRECT function call — no HTTP, no recursion, no SIGKILL
+        result = fetch_news(search_query=query, category=category)
+    except Exception as e:
+        result = "Something broke internally. Server didn’t die, but it tripped."
 
-    response = requests.get(
-        request.url_root + "news",
-        params=params
-    )
-
-    send_telegram_message(chat_id, response.text)
+    send_telegram_message(chat_id, result)
     return "ok"
-
 
 
 
