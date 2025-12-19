@@ -128,7 +128,7 @@ def telegram_webhook():
         # DIRECT function call — no HTTP, no recursion, no SIGKILL
         result = fetch_news(search_query=query, category=category)
     except Exception as e:
-        result = "Something broke internally. Server didn’t die, but it tripped."
+        result = f"Internal error: {str(e)[:200]}"
 
     send_telegram_message(chat_id, result)
     return "ok"
