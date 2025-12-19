@@ -13,6 +13,10 @@ client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
 NEWS_API_KEY = os.getenv("NEWS_API_KEY")
 NEWS_URL = "https://newsapi.org/v2/top-headlines"
 
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_API_URL = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
+
+
 
 def summarize_article(text):
     prompt = (
@@ -29,8 +33,16 @@ def summarize_article(text):
 
     return response.text.strip()
 
+def send_telegram_message(chat_id, text):
+    url = f"{TELEGRAM_API_URL}/sendMessage"
+    payload = {
+        "chat_id": chat_id,
+        "text": text
+    }
+    requests.post(url, json=payload)
 
-# 3. Route: /news
+
+# 3. Route:
 @app.route("/news")
 def get_news():
     search_query = request.args.get("q")
@@ -78,6 +90,52 @@ def get_news():
         count += 1
 
     return "\n\n".join(output)
+
+@app.route("/telegram", methods=["POST"])
+def telegram_webhook():
+    data = request.get_json()
+
+    if "message" not in data:
+        return "ok"
+
+    message = data["message"]
+    text = message.get("text", "")
+    chat_id = message["chat"]["id"]
+
+    # Expected format:
+    # /news tech
+    # /news q=gta 6
+    if not text.startswith("/news"):
+        send_telegram_message(chat_id, "Use: /news <category> or /news q=<search>")
+        return "ok"
+
+    parts = text.split(" ", 1)
+
+    category = "technology"
+    query = None
+
+    if len(parts) > 1:
+        arg = parts[1]
+        if arg.startswith("q="):
+            query = arg.replace("q=", "")
+        else:
+            category = arg
+
+    # Call your own API internally
+    params = {}
+    if query:
+        params["q"] = query
+    else:
+        params["category"] = category
+
+    response = requests.get(
+        request.url_root + "news",
+        params=params
+    )
+
+    send_telegram_message(chat_id, response.text)
+    return "ok"
+
 
 
 
